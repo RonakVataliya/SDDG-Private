@@ -1,6 +1,7 @@
 /** MOCK ONLY. MSW handlers for the FE draft contract (src/api/openapi.draft.yaml). Delete once H3 is live. */
 import { delay, http, HttpResponse, type HttpResponseResolver } from 'msw'
 import { AI_SECTION_VERSION } from '@/features/privacy/policy'
+import type { DiagramType } from '@/api/client'
 import { env } from '@/lib/env'
 import { advance, createJob, diagramView, getDb, projectView, publicJob, save, touch, uid, type DiagramRow } from './db'
 import { applyInstruction } from './edit'
@@ -191,10 +192,9 @@ export const handlers = [
       if (!p) return notFound()
       // FR5e: enforced on the server, not only by the disabled button.
       if (!p.confirmed_at) return fail(409, 'Confirm the extracted items before generating.', 'not_confirmed')
-      const { diagram_types } = (await request.json()) as { diagram_types: string[] }
-      if (diagram_types.some((t) => t !== 'use_case'))
-        return fail(422, 'Only the Use Case diagram is available in this version.')
-      const job = createJob(p.id, 'generation', { diagram_types: ['use_case'] })
+      const { diagram_types } = (await request.json()) as { diagram_types: DiagramType[] }
+      if (!diagram_types.length) return fail(422, 'Choose at least one diagram type.')
+      const job = createJob(p.id, 'generation', { diagram_types })
       return HttpResponse.json(publicJob(job), { status: 202 })
     }),
   ),

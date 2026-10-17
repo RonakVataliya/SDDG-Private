@@ -54,6 +54,15 @@ ISSUE_QUALIFIERS = {
     "unknown_requirement": "needs-review",
     "invalid_reference": "incomplete",
 }
+DIAGRAM_TITLES = {
+    "use_case": "Use Case",
+    "dfd": "Data Flow",
+    "class": "Class",
+    "sequence": "Sequence",
+    "activity": "Activity",
+    "component": "Component",
+    "state": "State",
+}
 
 
 # ============================================================================
@@ -271,6 +280,37 @@ def store_diagram(project_id, title, result, actors, processes, **extra):
     )
 
 
+def store_model_diagram(project_id, diagram_type, title, result, items):
+    """Store a deterministic diagram with the confirmed-item provenance it used."""
+    elements = [
+        {
+            "element_id": item["id"],
+            "model_item_id": item["id"],
+            "kind": item["category"],
+            "label": item["name"],
+            "statement_ids": item["statement_ids"],
+            "is_assumption": False,
+        }
+        for item in items
+    ]
+    svg = inject_element_ids_into_svg(result["svg"], elements)
+    refs = list(dict.fromkeys(reference for item in elements for reference in item["statement_ids"]))
+    return db.create_diagram(
+        project_id,
+        diagram_type,
+        title,
+        svg,
+        elements,
+        refs,
+        plantuml_source=result["plantuml_source"],
+    )
+
+
+def diagram_model_items(items):
+    """Adapt persisted review items to the shared diagram-service contract."""
+    return [{**item, "source_refs": item["statement_ids"]} for item in items]
+
+
 # ============================================================================
 # Asynchronous Background Workers
 # ============================================================================
@@ -334,15 +374,16 @@ async def extraction_worker(job_id, project_id, text, project_name):
 
 
 async def generation_worker(job_id, project_id, diagram_types):
-    """Background worker that generates Use Case diagram specs and SVGs via AI."""
+    """Generate the selected diagrams from one confirmed shared model."""
     try:
+        total = len(diagram_types) + 1
         db.update_job(
             job_id,
             status="running",
             queue_position=None,
             started_at=db.now(),
             progress_step=1,
-            progress_total=3,
+            progress_total=total,
             progress_label="Building approved diagram model",
         )
         project = db.get_project(project_id)
@@ -360,34 +401,58 @@ async def generation_worker(job_id, project_id, diagram_types):
             for i in items
             if i["category"] == "interaction" and i["source_item_id"] and i["target_item_id"]
         ]
-        db.update_job(
-            job_id,
-            progress_step=2,
-            progress_label="Generating and rendering Use Case diagram",
-        )
+        diagram_ids = []
         async with httpx.AsyncClient(timeout=180) as client:
-            response = await client.post(
-                f"{AI_URL}/usecase/generate",
-                json={
-                    "project_name": project["name"],
-                    "system_name": project["name"],
-                    "actors": actors,
-                    "processes": processes,
-                    "interactions": interactions,
-                },
-            )
-            response.raise_for_status()
-            result = response.json()
+            for index, diagram_type in enumerate(diagram_types, start=1):
+                db.update_job(
+                    job_id,
+                    progress_step=index + 1,
+                    progress_total=total,
+                    progress_label=f"Generating and rendering {DIAGRAM_TITLES[diagram_type]} diagram",
+                )
+                if diagram_type == "use_case":
+                    response = await client.post(
+                        f"{AI_URL}/usecase/generate",
+                        json={
+                            "project_name": project["name"],
+                            "system_name": project["name"],
+                            "actors": actors,
+                            "processes": processes,
+                            "interactions": interactions,
+                        },
+                    )
+                    response.raise_for_status()
+                    diagram = store_diagram(
+                        project_id, f"{project['name']} · Use Case", response.json(), actors, processes
+                    )
+                else:
+                    response = await client.post(
+                        f"{AI_URL}/diagrams/generate",
+                        json={
+                            "diagram_type": diagram_type,
+                            "system_name": project["name"],
+                            "items": diagram_model_items(items),
+                        },
+                    )
+                    response.raise_for_status()
+                    diagram = store_model_diagram(
+                        project_id,
+                        diagram_type,
+                        f"{project['name']} · {DIAGRAM_TITLES[diagram_type]}",
+                        response.json(),
+                        items,
+                    )
+                diagram_ids.append(diagram["id"])
+                db.update_job(job_id, diagram_ids=diagram_ids)
 
-        diagram = store_diagram(project_id, f"{project['name']} · Use Case", result, actors, processes)
         db.update_job(
             job_id,
             status="succeeded",
             queue_position=None,
-            progress_step=3,
-            progress_total=3,
-            progress_label="Diagram ready",
-            diagram_ids=[diagram["id"]],
+            progress_step=total,
+            progress_total=total,
+            progress_label="Diagrams ready",
+            diagram_ids=diagram_ids,
             finished_at=db.now(),
         )
     except Exception as e:
@@ -564,10 +629,14 @@ def generate_diagram(
     project = require_project(project_id, user)
     if not project["confirmed_at"]:
         raise HTTPException(409, "Confirm the extracted items before generating.")
-    if any(t != "use_case" for t in payload.diagram_types):
-        raise HTTPException(422, "Only the Use Case diagram is available in this version.")
-    job = db.create_job(project_id, "generation", 3, "Queued", diagram_types=["use_case"])
-    bg.add_task(generation_worker, job["id"], project_id, ["use_case"])
+    job = db.create_job(
+        project_id,
+        "generation",
+        len(payload.diagram_types) + 1,
+        "Queued",
+        diagram_types=payload.diagram_types,
+    )
+    bg.add_task(generation_worker, job["id"], project_id, payload.diagram_types)
     return job
 
 

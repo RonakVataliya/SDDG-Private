@@ -126,19 +126,19 @@ function applyGeneration(job: JobRow) {
   const pid = job.project_id
   const project = db.projects.find((p) => p.id === pid)!
   const model = buildUseCaseModel(db.items[pid] ?? [], project.name)
-  const diagram: DiagramRow = {
-    id: uid('dg'),
-    project_id: pid,
-    type: 'use_case',
-    title: `${project.name} · Use Case`,
-    created_at: now(),
-    parent_id: null,
-    instruction: null,
-    model,
-    svg: renderUseCase(model),
+  const labels: Record<DiagramRow['type'], string> = {
+    use_case: 'Use Case', dfd: 'Data Flow', class: 'Class', sequence: 'Sequence',
+    activity: 'Activity', component: 'Component', state: 'State',
   }
-  db.diagrams.push(diagram)
-  job.diagram_ids = [diagram.id]
+  const types: DiagramRow['type'][] = job.diagram_types?.length ? job.diagram_types : ['use_case']
+  job.diagram_ids = types.map((type) => {
+    const diagram: DiagramRow = {
+      id: uid('dg'), project_id: pid, type, title: `${project.name} · ${labels[type]}`,
+      created_at: now(), parent_id: null, instruction: null, model, svg: renderUseCase(model),
+    }
+    db.diagrams.push(diagram)
+    return diagram.id
+  })
   touch(pid)
 }
 

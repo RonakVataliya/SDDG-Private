@@ -274,7 +274,7 @@ components:
         decision: { type: string, enum: [approved, rejected] }
     DiagramType:
       type: string
-      enum: [use_case, class, activity, sequence, dfd, component]
+      enum: [use_case, class, activity, sequence, dfd, component, state]
     GenerationCreate:
       type: object
       required: [diagram_types]
