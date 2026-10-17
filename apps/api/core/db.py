@@ -13,7 +13,7 @@ pool = ConnectionPool(
     os.environ["DATABASE_URL"], min_size=1, max_size=5, open=False,
     kwargs={"row_factory": dict_row, "prepare_threshold": None},
 )
-JSON_COLS = ("qualifiers", "statement_ids", "diagram_types", "diagram_ids", "elements", "spec")
+JSON_COLS = ("qualifiers", "statement_ids", "diagram_types", "diagram_ids", "suggestions", "elements", "spec")
 
 
 def now():
@@ -236,10 +236,25 @@ def get_latest_extraction_job(pid):
     ))
 
 
+def decide_extraction_suggestion(pid, suggestion_id, decision):
+    """Record a user's decision without changing the extracted model."""
+    job = get_latest_extraction_job(pid)
+    if not job or job["status"] != "succeeded":
+        return None
+    suggestions = job.get("suggestions", [])
+    for suggestion in suggestions:
+        if suggestion.get("id") == suggestion_id and "decision" not in suggestion:
+            suggestion["decision"] = decision
+            run("UPDATE jobs SET suggestions=%s WHERE id=%s", json.dumps(suggestions), job["id"])
+            return get_latest_extraction_job(pid)
+    return None
+
+
 def update_job(jid, **fields):
     """Columns come from server code only, never from request data."""
-    if "diagram_ids" in fields:
-        fields["diagram_ids"] = json.dumps(fields["diagram_ids"])
+    for name in ("diagram_ids", "suggestions"):
+        if name in fields:
+            fields[name] = json.dumps(fields[name])
     sets = ", ".join(f"{k}=%s" for k in fields)
     run(f"UPDATE jobs SET {sets} WHERE id=%s", *fields.values(), jid)
 

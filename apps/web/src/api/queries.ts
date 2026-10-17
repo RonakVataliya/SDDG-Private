@@ -128,6 +128,20 @@ export function useConfirmExtraction(projectId: string) {
   })
 }
 
+export function useDecideExtractionSuggestion(projectId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ suggestionId, decision }: { suggestionId: string; decision: 'approved' | 'rejected' }) =>
+      unwrap(
+        api.POST('/projects/{project_id}/extraction-suggestions/{suggestion_id}', {
+          params: { path: { project_id: projectId, suggestion_id: suggestionId } },
+          body: { decision },
+        }),
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.project(projectId), exact: true }),
+  })
+}
+
 /* ---------- generation + diagrams ---------- */
 
 export function useStartGeneration(projectId: string) {

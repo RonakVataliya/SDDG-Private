@@ -26,6 +26,7 @@ from schemas.api import (
     ItemUpdate,
     ProjectCreate,
     RevisionCreate,
+    SuggestionDecision,
 )
 
 # ============================================================================
@@ -48,6 +49,11 @@ CATEGORY_FIELDS = [
     ("interaction", "interactions"),
     ("relationship", "relationships"),
 ]
+ISSUE_QUALIFIERS = {
+    "missing_traceability": "needs-review",
+    "unknown_requirement": "needs-review",
+    "invalid_reference": "incomplete",
+}
 
 
 # ============================================================================
@@ -146,6 +152,12 @@ def approved_model(project_id):
 def convert_extraction_to_items(result, statement_map):
     """Turns the AI extraction result into item dicts, remapping AI ids to local ids."""
     items, local_ids = [], {}
+    qualifiers_by_id = {}
+    for issue in result.get("issues", []):
+        qualifier = ISSUE_QUALIFIERS.get(issue.get("code"))
+        if qualifier:
+            for element_id in issue.get("element_ids", []):
+                qualifiers_by_id.setdefault(element_id, []).append(qualifier)
     for category, field in CATEGORY_FIELDS:
         for el in result.get(field, []):
             refs = [statement_map.get(r, r) for r in el.get("source_refs", []) if statement_map.get(r, r)]
@@ -158,7 +170,7 @@ def convert_extraction_to_items(result, statement_map):
                 "category": category,
                 "name": el.get("name") or el.get("description") or rel_type or category.replace("_", " ").title(),
                 "description": el.get("description"),
-                "qualifiers": [],
+                "qualifiers": list(dict.fromkeys(qualifiers_by_id.get(el.get("id"), []))),
                 "statement_ids": refs,
                 "source_item_id": el.get("source_id") if is_relation else None,
                 "target_item_id": el.get("target_id") if is_relation else None,
@@ -170,6 +182,8 @@ def convert_extraction_to_items(result, statement_map):
         for k in ("source_item_id", "target_item_id"):
             if item[k]:
                 item[k] = local_ids.get(item[k])
+                if item[k] is None and "incomplete" not in item["qualifiers"]:
+                    item["qualifiers"].append("incomplete")
 
     return items
 
@@ -312,6 +326,7 @@ async def extraction_worker(job_id, project_id, text, project_name):
             progress_step=3,
             progress_total=3,
             progress_label="Extraction complete",
+            suggestions=result.get("suggestions", []),
             finished_at=db.now(),
         )
     except Exception as e:
@@ -463,6 +478,21 @@ def get_statements(project_id: str, user: User = Depends(get_current_user)):
     """Returns the individual requirement statements extracted from project input."""
     require_project(project_id, user)
     return db.get_statements(project_id)
+
+
+@router.post("/projects/{project_id}/extraction-suggestions/{suggestion_id}")
+def decide_suggestion(
+    project_id: str,
+    suggestion_id: str,
+    payload: SuggestionDecision,
+    user: User = Depends(get_current_user),
+):
+    """Persist an explicit approval or rejection of an extraction hint."""
+    require_project(project_id, user)
+    job = db.decide_extraction_suggestion(project_id, suggestion_id, payload.decision)
+    if not job:
+        raise HTTPException(404, "Suggestion not found, or it was already decided.")
+    return job
 
 
 @router.get("/projects/{project_id}/items")

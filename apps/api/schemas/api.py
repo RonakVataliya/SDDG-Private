@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 ItemCategory = Literal["actor", "entity", "process", "data_flow", "data_store", "interaction", "relationship"]
 DiagramType = Literal["use_case", "class", "activity", "sequence", "dfd", "component"]
@@ -21,6 +21,17 @@ class ItemUpdate(BaseModel):
 
 class InputCreate(BaseModel):
     text: str = Field(min_length=1)
+
+    @field_validator("text")
+    @classmethod
+    def text_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Requirement text must not be blank.")
+        return value
+
+
+class SuggestionDecision(BaseModel):
+    decision: Literal["approved", "rejected"]
 
 
 class GenerationCreate(BaseModel):

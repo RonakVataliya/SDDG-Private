@@ -362,6 +362,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/projects/{project_id}/extraction-suggestions/{suggestion_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                suggestion_id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve or reject an input-improvement suggestion from the latest extraction */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    project_id: components["parameters"]["ProjectId"];
+                    suggestion_id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SuggestionDecision"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: { [name: string]: unknown };
+                    content: { "application/json": components["schemas"]["Job"]; };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/projects/{project_id}/items/{item_id}": {
         parameters: {
             query?: never;
@@ -814,6 +855,14 @@ export interface components {
             name?: string;
             description?: string | null;
         };
+        ExtractionSuggestion: {
+            id: string;
+            message: string;
+            decision?: "approved" | "rejected" | null;
+        };
+        SuggestionDecision: {
+            decision: "approved" | "rejected";
+        };
         /** @enum {string} */
         DiagramType: "use_case" | "class" | "activity" | "sequence" | "dfd" | "component";
         GenerationCreate: {
@@ -835,6 +884,7 @@ export interface components {
             };
             diagram_types?: components["schemas"]["DiagramType"][];
             diagram_ids?: string[];
+            suggestions?: components["schemas"]["ExtractionSuggestion"][];
             error?: string | null;
             /** Format: date-time */
             created_at?: string;

@@ -23,7 +23,6 @@ def run_extraction_pipeline(text: str, project_name: str | None = None) -> Extra
         "raw_input": text,
         "project_name": project_name,
         "node_timings": [],
-        "errors": [],
     }
 
     final_state = graph.invoke(initial_state)
@@ -60,10 +59,12 @@ def run_extraction_pipeline(text: str, project_name: str | None = None) -> Extra
             settings.EXTRACTION_TIMING_TARGET_SECONDS,
         )
 
-    if final_state.get("errors"):
+    issues = final_state.get("issues", [])
+    suggestions = final_state.get("suggestions", [])
+    if issues:
         logger.warning(
             "extraction_completed_with_validation_errors error_count=%d",
-            len(final_state["errors"]),
+            len(issues),
         )
 
     return ExtractionResult(
@@ -75,5 +76,7 @@ def run_extraction_pipeline(text: str, project_name: str | None = None) -> Extra
         data_stores=final_state.get("data_stores", []),
         interactions=final_state.get("interactions", []),
         relationships=final_state.get("relationships", []),
+        issues=issues,
+        suggestions=suggestions,
         metadata=metadata,
     )

@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   id text PRIMARY KEY, project_id text NOT NULL REFERENCES projects ON DELETE CASCADE,
   kind text NOT NULL, status text NOT NULL, queue_position int,
   progress_step int NOT NULL, progress_total int NOT NULL, progress_label text NOT NULL,
-  diagram_types text NOT NULL, diagram_ids text NOT NULL, error text,
+  diagram_types text NOT NULL, diagram_ids text NOT NULL, suggestions text NOT NULL DEFAULT '[]', error text,
   created_at timestamptz NOT NULL, started_at timestamptz, finished_at timestamptz);
 CREATE INDEX IF NOT EXISTS jobs_project_idx ON jobs (project_id);
 CREATE TABLE IF NOT EXISTS diagrams (
@@ -31,6 +31,7 @@ CREATE INDEX IF NOT EXISTS diagrams_project_idx ON diagrams (project_id);
 -- Insertion order for statements/items (Postgres has no rowid; ids are random).
 ALTER TABLE statements ADD COLUMN IF NOT EXISTS seq bigint GENERATED ALWAYS AS IDENTITY;
 ALTER TABLE items ADD COLUMN IF NOT EXISTS seq bigint GENERATED ALWAYS AS IDENTITY;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS suggestions text NOT NULL DEFAULT '[]';
 CREATE INDEX IF NOT EXISTS statements_project_idx ON statements (project_id, seq);
 CREATE INDEX IF NOT EXISTS items_project_idx ON items (project_id, seq);
 

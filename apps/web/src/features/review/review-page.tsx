@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
 import type { ExtractedItem, ItemCategory, RequirementStatement } from '@/api/client'
 import { errorMessage } from '@/api/errors'
-import { ITEMS_PAGE_SIZE, useConfirmExtraction, useItems, useStatements } from '@/api/queries'
+import { ITEMS_PAGE_SIZE, useConfirmExtraction, useDecideExtractionSuggestion, useItems, useStatements } from '@/api/queries'
 import { Badge, RefTag } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Notice } from '@/components/ui/notice'
@@ -52,6 +52,8 @@ export function ReviewPage() {
         title="Review extracted items"
         description="Check what was pulled out of your requirements. Fix anything wrong, then confirm. Diagrams are generated only from confirmed items."
       />
+
+      <ExtractionSuggestions />
 
       <div role="group" aria-label="Filter by category" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
         {[{ value: undefined, plural: 'All', count: total }, ...CATEGORIES.map((c) => ({ ...c, count: counts[c.value] ?? 0 }))].map(
@@ -157,6 +159,32 @@ export function ReviewPage() {
 
       <EditItemDialog projectId={project.id} item={editing} confirmed={project.confirmed} onClose={() => setEditing(null)} />
     </div>
+  )
+}
+
+function ExtractionSuggestions() {
+  const { project } = useWorkspace()
+  const decide = useDecideExtractionSuggestion(project.id)
+  const suggestions = project.extraction?.suggestions?.filter((suggestion) => !suggestion.decision) ?? []
+
+  if (!suggestions.length) return null
+  return (
+    <Notice tone="warning" title="Suggestions for clearer requirements">
+      <ul className="space-y-2">
+        {suggestions.map((suggestion) => (
+          <li key={suggestion.id} className="flex flex-wrap items-center gap-2">
+            <span className="min-w-0 flex-1">{suggestion.message}</span>
+            <Button size="sm" variant="secondary" disabled={decide.isPending} onClick={() => decide.mutate({ suggestionId: suggestion.id, decision: 'rejected' })}>
+              Reject
+            </Button>
+            <Button size="sm" disabled={decide.isPending} onClick={() => decide.mutate({ suggestionId: suggestion.id, decision: 'approved' })}>
+              Approve
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {decide.isError && <p className="mt-2 text-danger">{errorMessage(decide.error)}</p>}
+    </Notice>
   )
 }
 

@@ -69,6 +69,17 @@ paths:
         '200':
           description: OK
           content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/RequirementStatement' } } } }
+  /projects/{project_id}/extraction-suggestions/{suggestion_id}:
+    parameters:
+      - { $ref: '#/components/parameters/ProjectId' }
+      - { name: suggestion_id, in: path, required: true, schema: { type: string } }
+    post:
+      summary: Approve or reject an input-improvement suggestion from the latest extraction
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SuggestionDecision' } } }
+      responses:
+        '200': { description: Recorded, content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
   /projects/{project_id}/items:
     parameters: [{ $ref: '#/components/parameters/ProjectId' }]
     get:
@@ -249,6 +260,18 @@ components:
       properties:
         name: { type: string, minLength: 1 }
         description: { type: [string, 'null'] }
+    ExtractionSuggestion:
+      type: object
+      required: [id, message]
+      properties:
+        id: { type: string }
+        message: { type: string }
+        decision: { type: [string, 'null'], enum: [approved, rejected, 'null'] }
+    SuggestionDecision:
+      type: object
+      required: [decision]
+      properties:
+        decision: { type: string, enum: [approved, rejected] }
     DiagramType:
       type: string
       enum: [use_case, class, activity, sequence, dfd, component]
@@ -275,6 +298,7 @@ components:
             label: { type: string, description: 'e.g. "Generating diagram 1 of 1"' }
         diagram_types: { type: array, items: { $ref: '#/components/schemas/DiagramType' } }
         diagram_ids: { type: array, items: { type: string } }
+        suggestions: { type: array, items: { $ref: '#/components/schemas/ExtractionSuggestion' } }
         error: { type: [string, 'null'] }
         created_at: { type: string, format: date-time }
         started_at: { type: [string, 'null'], format: date-time }
