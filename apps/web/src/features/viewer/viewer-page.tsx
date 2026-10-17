@@ -183,6 +183,11 @@ export function ViewerPage() {
         </ol>
       )}
 
+      {diagram.type !== 'use_case' ? (
+        <p className="px-5 pt-3 pb-4 text-xs text-slate">
+          Only Use Case diagrams can be revised by describing a change. To change this diagram, edit the items and generate it again.
+        </p>
+      ) : (
       <form onSubmit={send} className="px-5 pt-3 pb-4">
         <div className="flex items-center gap-2 rounded-full border border-rule-strong bg-surface py-1.5 pr-1.5 pl-4 focus-within:border-teal focus-within:ring-2 focus-within:ring-teal/20">
           <label htmlFor="diagram-edit" className="sr-only">
@@ -207,6 +212,7 @@ export function ViewerPage() {
         </div>
         <p className="mt-1.5 px-4 text-xs text-slate">Each change makes a new version. Earlier versions stay under Your diagrams.</p>
       </form>
+      )}
     </div>
   )
 }

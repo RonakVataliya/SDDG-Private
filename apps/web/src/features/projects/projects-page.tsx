@@ -101,8 +101,8 @@ function EmptyState() {
       </svg>
       <h2 className="mt-5 text-lg font-semibold">No projects yet</h2>
       <p className="mx-auto mt-1.5 max-w-sm text-slate">
-        Create a project, paste your requirements, and SDDG will draft a Use Case diagram you can trace back to each
-        requirement.
+        Create a project, paste your requirements, and SDDG will draft software design diagrams you can trace back to
+        each requirement.
       </p>
       <CreateProjectDialog
         trigger={

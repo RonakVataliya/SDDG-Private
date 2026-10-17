@@ -308,7 +308,15 @@ def store_model_diagram(project_id, diagram_type, title, result, items):
 
 def diagram_model_items(items):
     """Adapt persisted review items to the shared diagram-service contract."""
-    return [{**item, "source_refs": item["statement_ids"]} for item in items]
+    return [
+        {
+            **item,
+            "source_refs": item["statement_ids"],
+            "source_id": item["source_item_id"],
+            "target_id": item["target_item_id"],
+        }
+        for item in items
+    ]
 
 
 # ============================================================================
@@ -677,6 +685,8 @@ async def revise_diagram(
     instruction = payload.instruction.strip()
     if not instruction:
         raise HTTPException(422, "Describe the change you want.")
+    if diagram["type"] != "use_case":
+        raise HTTPException(422, "Only Use Case diagrams can be revised. Edit the items and generate again.")
     if not diagram["spec"]:
         raise HTTPException(
             422,

@@ -17,5 +17,5 @@ export const QUALIFIERS: Record<Schemas['ItemQualifier'], { label: string; hint:
   'low-confidence': { label: 'Low confidence', hint: 'This may not be a real process. Check the wording.' },
   incomplete: { label: 'Incomplete', hint: 'No clear source or destination was found.' },
   'order-uncertain': { label: 'Order uncertain', hint: 'The order of this interaction could not be inferred.' },
-  'needs-review': { label: 'Needs review', hint: 'Relationship type unknown; defaulted to association.' },
+  'needs-review': { label: 'Needs review', hint: 'Not clearly linked to your requirements, or its type was guessed. Check it.' },
 }

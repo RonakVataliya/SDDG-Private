@@ -2,7 +2,7 @@
 
 SDDG is a web application that turns natural-language software requirements into structured requirements and software-design models, with the goal of generating diagrams from those models. The project combines an interactive requirements workflow, an AI extraction service, and a diagram-rendering backend.
 
-> **Current implementation status:** the end-to-end AI-backed path currently generates **Use Case diagrams only**. Other diagram types are shown as planned options in the interface; they are not yet available for generation.
+> **Current implementation status:** the AI-backed path generates **Use Case** diagrams (LLM-derived specification, revisable in natural language) and, deterministically from the confirmed model, **Data Flow, Class, Sequence, Activity, Component, and State** diagrams. Only Use Case diagrams can be revised by instruction; the others are regenerated after editing items.
 
 ## Table of Contents
 
@@ -26,7 +26,8 @@ SDDG is a web application that turns natural-language software requirements into
 - **Submit requirements:** type or paste requirement text, user stories, or SRS excerpts. File upload and direct document parsing are not implemented yet.
 - **Extract a structured model:** split submitted text into atomic requirement statements and identify actors, entities, processes, data flows, data stores, interactions, and relationships.
 - **Review before generation:** inspect extracted modelling items, edit item names and descriptions, and explicitly confirm the model before generating a diagram.
-- **Generate a Use Case diagram:** derive a structured Use Case specification from the confirmed actors and processes, produce PlantUML source, and render the diagram through Kroki.
+- **Generate diagrams:** pick one or more diagram types. Use Case diagrams derive a structured specification from the confirmed actors and processes; the other types are built directly from the confirmed model. All produce PlantUML source that Kroki renders. A diagram that needs items the model lacks (for example a Sequence diagram with no interactions) is rejected with a clear message.
+- **Act on extraction hints:** extraction flags untraceable or dangling items for review and may suggest how to improve the input; you can approve or reject each suggestion.
 - **Revise with natural-language feedback:** request changes to a generated diagram. Each successful revision creates a new version, preserving the earlier version and the revision instruction.
 - **Inspect and export:** view the diagram with pan/zoom controls and export it as a PNG image.
 - **Track asynchronous work:** show progress and errors for extraction and diagram generation jobs.
@@ -38,7 +39,7 @@ SDDG is a web application that turns natural-language software requirements into
 2. **Submit requirement text.** Paste functional or non-functional requirements, user stories, or SRS text.
 3. **Extract and segment.** The AI service separates the input into requirement statements and extracts modelling elements with source references.
 4. **Review and edit.** Correct extracted item names or descriptions and confirm the model.
-5. **Generate a diagram.** Generate a Use Case diagram from the confirmed model.
+5. **Generate diagrams.** Generate the chosen diagram types from the confirmed model.
 6. **Iterate.** Describe a change in plain language. SDDG creates a new diagram version rather than overwriting the previous version.
 7. **Export.** Download the selected version as PNG.
 
@@ -75,7 +76,7 @@ flowchart LR
 - **Backend API (`apps/api`)** — FastAPI service for authentication checks, AI-consent enforcement, project persistence, requirement/item review, job status, diagram versioning, and export. PostgreSQL stores projects, statements, extracted items, jobs, and diagrams.
 - **AI extraction service (`services/ai-extraction`)** — a separate FastAPI service using LangGraph and LangChain. Its extraction graph splits requirements, extracts model categories in dependent/parallel stages, and merges the results. It also creates and revises Use Case specifications and PlantUML source.
 - **Database** — PostgreSQL; the supplied configuration is designed to work with Supabase Postgres and Supabase Auth. A development-only token bypass is available for local integration work.
-- **Diagram rendering (`infra/kroki-compose.yml`)** — a self-hosted Kroki deployment used to render PlantUML. The current workflow uses PlantUML for Use Case diagrams.
+- **Diagram rendering (`infra/kroki-compose.yml`)** — a self-hosted Kroki deployment used to render PlantUML. All supported diagram types are rendered from PlantUML.
 
 ## Technology Stack
 
@@ -340,7 +341,8 @@ python tests_integration.py
 
 ## Known Limitations
 
-- Only **Use Case diagrams** are enabled end to end. Class, Activity, Sequence, DFD, and Component options are not implemented yet; State diagram support is also not wired into the current diagram-type model.
+- Class, Activity, Sequence, DFD, Component, and State diagrams are generated by simple deterministic rules (for example, Activity and State diagrams list confirmed processes in order, with no branching or inferred transitions) and cannot yet be revised by instruction. Class diagrams show no attributes or methods.
+- In the frontend mock mode, every diagram type renders with the Use Case mock renderer, and extraction suggestions are not simulated.
 - Input is plain text pasted into the application. PDF/DOCX/SRS file upload, file parsing, and richer input-source management are not implemented.
 - Review currently supports editing extracted item names and descriptions. It is not yet a full model editor for changing all relationships and properties.
 - Diagram editing is driven by natural-language instructions and produces a new version. Direct drag-and-drop element repositioning and a full visual style editor are not implemented.

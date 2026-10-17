@@ -36,6 +36,9 @@ EXTRACTION = {
                       'type': 'actor_to_process', 'description': 'checks orders',
                       'sequence_hint': None, 'source_refs': ['R-002']}],
     'relationships': [],
+    'issues': [{'code': 'missing_traceability', 'message': 'P-001 is not linked.', 'element_ids': ['P-001'],
+                'requirement_ids': []}],
+    'suggestions': [{'id': 'review-traceability', 'message': 'Review the flagged items before confirming.'}],
     'metadata': {'model_used': 'fake', 'requirement_count': 2, 'node_timings': [],
                  'total_duration_seconds': 0.01, 'timing_target_seconds': 60,
                  'met_timing_target': True, 'project_name': 'Integration'},
@@ -89,6 +92,13 @@ class FakeAIClient:
             return FakeResponse(EXTRACTION)
         if url.endswith('/plantuml/png'):
             return FakeResponse(content=b'\x89PNG\r\n\x1a\n' + b'0' * 200)
+        if url.endswith('/diagrams/generate'):
+            payload = kwargs['json']
+            # The shared diagram contract names edge ends source_id/target_id, not *_item_id.
+            edges = [i for i in payload['items'] if i['category'] == 'interaction']
+            assert edges and all(i['source_id'] and i['target_id'] for i in edges), payload
+            return FakeResponse({'plantuml_source': '@startuml\nA -> B\n@enduml', 'svg': USECASE['svg'],
+                                 'render_duration_seconds': 0.01})
         if url.endswith('/usecase/generate'):
             payload = kwargs['json']
             actor_id = payload['actors'][0]['id']
@@ -138,6 +148,16 @@ def main():
             items = client.get(f'/api/v1/projects/{pid}/items', headers=headers).json()['items']
             categories = {item['category'] for item in items}
             assert {'actor', 'process', 'interaction'} <= categories
+            # Extraction issues surface as item qualifiers for review.
+            assert any('needs-review' in item['qualifiers'] for item in items if item['category'] == 'process')
+
+            suggestion_url = f'/api/v1/projects/{pid}/extraction-suggestions/review-traceability'
+            decided = client.post(suggestion_url, headers=headers, json={'decision': 'approved'})
+            assert decided.status_code == 200, decided.text
+            assert decided.json()['suggestions'][0]['decision'] == 'approved'
+            assert client.post(suggestion_url, headers=headers, json={'decision': 'rejected'}).status_code == 404
+            assert client.post(f'/api/v1/projects/{pid}/extraction-suggestions/nope', headers=headers,
+                               json={'decision': 'approved'}).status_code == 404
 
             assert client.post(f'/api/v1/projects/{pid}/confirmation', headers=headers).status_code == 201
             # Generation is asynchronous at the API boundary; exercise the real worker directly.
@@ -163,6 +183,16 @@ def main():
             assert revised['parent_id'] == diagram_id
             assert revised['instruction'] == 'rename Check Orders to View Orders'
             assert 'View Orders' in revised['svg']
+
+            # Non-Use-Case diagrams are built from the confirmed model and cannot be revised.
+            job = db.create_job(pid, 'generation', 2, 'Queued', diagram_types=['sequence'])
+            asyncio.run(integrated.generation_worker(job['id'], pid, ['sequence']))
+            sequence_job = db.owned_job(job['id'], USER_ID)
+            assert sequence_job['status'] == 'succeeded', sequence_job
+            sequence = client.get(f'/api/v1/diagrams/{sequence_job["diagram_ids"][0]}', headers=headers).json()
+            assert sequence['type'] == 'sequence' and sequence['elements']
+            assert client.post(f'/api/v1/diagrams/{sequence["id"]}/revisions', headers=headers,
+                               json={'instruction': 'rename something'}).status_code == 422
 
             png = client.get(f'/api/v1/diagrams/{diagram_id}/export?format=png', headers=headers)
             assert png.status_code == 200

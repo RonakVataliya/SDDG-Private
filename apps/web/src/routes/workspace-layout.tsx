@@ -41,7 +41,7 @@ function buildSteps(project: Project, latestDiagramId?: string): Step[] {
       n: 3,
       to: 'generate',
       label: 'Generate',
-      detail: project.confirmed ? 'Use Case diagram' : 'Locked until you confirm',
+      detail: project.confirmed ? 'Choose diagram types' : 'Locked until you confirm',
       state: project.confirmed ? (project.diagram_count ? 'done' : 'open') : 'locked',
     },
     {

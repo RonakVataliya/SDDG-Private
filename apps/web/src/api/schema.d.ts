@@ -864,7 +864,7 @@ export interface components {
             id: string;
             message: string;
             /** @enum {string|null} */
-            decision?: "approved" | "rejected" | "null" | null;
+            decision?: "approved" | "rejected" | null;
         };
         SuggestionDecision: {
             /** @enum {string} */

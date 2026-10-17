@@ -266,7 +266,7 @@ components:
       properties:
         id: { type: string }
         message: { type: string }
-        decision: { type: [string, 'null'], enum: [approved, rejected, 'null'] }
+        decision: { type: [string, 'null'], enum: [approved, rejected, null] }
     SuggestionDecision:
       type: object
       required: [decision]
