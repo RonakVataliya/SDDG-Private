@@ -3,12 +3,13 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { TransformComponent, TransformWrapper, useControls } from 'react-zoom-pan-pinch'
 import type { Diagram } from '@/api/client'
-import { ApiError, errorMessage } from '@/api/errors'
+import { ApiError, errorMessage, isConsentRequired } from '@/api/errors'
 import { useDiagram, useDiagramImage, useDiagramLayout, useDiagrams, useReviseDiagram } from '@/api/queries'
 import { Button } from '@/components/ui/button'
 import { Notice } from '@/components/ui/notice'
 import { PageLoading, Spinner } from '@/components/ui/spinner'
 import { typeLabel } from '@/features/generate/diagram-types'
+import { ConsentDialog } from '@/features/privacy/consent-dialog'
 import { LayoutCanvas } from '@/features/viewer/layout-canvas'
 import { LayoutEditor } from '@/features/viewer/layout-editor'
 import { formatRelative } from '@/lib/utils'
@@ -46,6 +47,7 @@ export function ViewerPage() {
   const { data: all } = useDiagrams(project.id)
   const image = useDiagramImage(diagramId)
   const revise = useReviseDiagram(project.id)
+  const [consentOpen, setConsentOpen] = useState(false)
   const layout = useDiagramLayout(diagramId)
   const [arrangeFor, setArrangeFor] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
@@ -83,11 +85,17 @@ export function ViewerPage() {
   // Kroki draws the PNG from the source and knows nothing of moved positions, so a moved version is drawn here instead.
   const moved = layout.data?.saved ? layout.data : null
 
-  async function send(e: FormEvent) {
-    e.preventDefault()
+  async function send(e?: FormEvent) {
+    e?.preventDefault()
     const instruction = draft.trim()
     if (!instruction || revise.isPending) return
-    const next = await revise.mutateAsync({ diagramId: diagram!.id, instruction }).catch(() => null)
+    const next = await revise.mutateAsync({ diagramId: diagram!.id, instruction }).catch((err: unknown) => {
+      if (isConsentRequired(err)) {
+        revise.reset() // not an error to show: ask for consent, then send again
+        setConsentOpen(true)
+      }
+      return null
+    })
     if (!next) return // the error shows in the thread; the text stays in the box to fix and resend
     setDraft('')
     navigate(`../diagrams/${next.id}`)
@@ -240,6 +248,7 @@ export function ViewerPage() {
         </div>
         <p className="mt-1.5 px-4 text-xs text-slate">Each change makes a new version. Earlier versions stay under Your diagrams.</p>
       </form>
+      <ConsentDialog open={consentOpen} onOpenChange={setConsentOpen} onConsented={() => void send()} action="Agree and apply" />
     </div>
   )
 }

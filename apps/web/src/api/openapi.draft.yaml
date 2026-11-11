@@ -125,6 +125,7 @@ paths:
       responses:
         '202': { description: Queued, content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } } }
         '409': { description: Extraction not confirmed (FR5e), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: No current AI consent (code consent_required), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
   /projects/{project_id}/diagrams:
     parameters: [{ $ref: '#/components/parameters/ProjectId' }]
     get:
@@ -164,6 +165,7 @@ paths:
       responses:
         '201': { description: New version, content: { application/json: { schema: { $ref: '#/components/schemas/Diagram' } } } }
         '422': { description: The instruction could not be applied, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '403': { description: No current AI consent (code consent_required), content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
   /diagrams/{diagram_id}/export:
     parameters: [{ $ref: '#/components/parameters/DiagramId' }]
     get:
@@ -212,8 +214,9 @@ components:
       properties: { status: { type: string, enum: [ok] } }
     Consent:
       type: object
-      required: [consented, current_policy_version]
+      required: [consented, current_policy_version, ai_provider]
       properties:
+        ai_provider: { type: string, description: 'Provider name(s) for the consent text, set on the API (AI_PROVIDER_NAME)' }
         consented: { type: boolean, description: True only if consent matches the current AI section of the policy }
         policy_version: { type: [string, 'null'] }
         consented_at: { type: [string, 'null'], format: date-time }

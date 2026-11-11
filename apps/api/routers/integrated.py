@@ -52,7 +52,9 @@ AI_HEADERS = {"X-Internal-Key": os.getenv("INTERNAL_API_KEY", "")}
 AI_TIMEOUT = 300
 REVISION_BUSY_WAIT = 60  # a revision runs inside the request: wait at most this long for AI capacity
 KROKI_URL = os.getenv("KROKI_URL", "http://127.0.0.1:8080")
-POLICY_VERSION = os.getenv("AI_POLICY_VERSION", "2026-09-01")
+POLICY_VERSION = os.getenv("AI_POLICY_VERSION", "2026-11-11")
+# Shown in the consent text. Name every provider the AI service can send text to (LLM_PROVIDERS there).
+AI_PROVIDER_NAME = os.getenv("AI_PROVIDER_NAME", "Groq or Google Gemini")
 NOT_FOUND = "Not found, or you do not have access to it."
 
 # use_case keeps its original code path below; every other type is driven by
@@ -81,6 +83,24 @@ def require_project(project_id, user):
     if not project:
         raise HTTPException(404, NOT_FOUND)
     return project
+
+
+def consent_refusal(user):
+    """The 403 for a user who has not agreed to the current AI policy, else None. Call it after the membership
+    check (a stranger still gets 404) and before anything is stored or sent."""
+    c = db.consent(user.id)
+    if c and c["policy_version"] == POLICY_VERSION:
+        return None
+    # The web app opens the consent dialog when it sees this code.
+    return JSONResponse(
+        status_code=403,
+        content={"detail": "Agree to AI processing before submitting requirements.", "code": "consent_required"},
+    )
+
+
+def norm_text(text):
+    """Two requirements are the same if they differ only in case, spacing or a final full stop."""
+    return " ".join(text.split()).casefold().rstrip(".").rstrip()
 
 
 def require_diagram(diagram_id, user):
@@ -362,8 +382,19 @@ async def extraction_worker(job_id, project_id, text, project_name):
             result = await ai.post("/extraction/split", {"text": text, "project_name": project_name})
 
         db.update_job(job_id, progress_step=2, progress_label="Checking requirement quality")
-        db.insert_statements(project_id, result.get("requirements", []))
-        db.reset_model(project_id)  # new requirements: confirm again, building blocks are extracted afresh
+        # Requirements the project already has (or repeated in this text) are not added again.
+        seen = {norm_text(s["text"]) for s in db.get_statements(project_id)}
+        new = []
+        found = result.get("requirements", [])
+        for r in found:
+            key = norm_text(r["text"])
+            if key not in seen:
+                seen.add(key)
+                new.append(r)
+        skipped = len(found) - len(new)
+        if new:
+            db.insert_statements(project_id, new)
+            db.reset_model(project_id)  # new requirements: confirm again, building blocks are extracted afresh
         await asyncio.to_thread(detect, project_id)  # quality flags, off the event loop; never fails the job
         db.update_job(
             job_id,
@@ -371,7 +402,8 @@ async def extraction_worker(job_id, project_id, text, project_name):
             queue_position=None,
             progress_step=3,
             progress_total=3,
-            progress_label="Requirements ready to review",
+            progress_label="Requirements ready to review" + (
+                f" ({skipped} duplicate{'' if skipped == 1 else 's'} skipped)" if skipped else ""),
             finished_at=db.now(),
         )
     except Exception as e:
@@ -546,6 +578,7 @@ def get_consent(user: User = Depends(get_current_user)):
         "policy_version": c["policy_version"] if c else None,
         "consented_at": c["consented_at"] if c else None,
         "current_policy_version": POLICY_VERSION,
+        "ai_provider": AI_PROVIDER_NAME,
     }
 
 
@@ -560,6 +593,7 @@ def give_consent(payload: ConsentCreate, user: User = Depends(get_current_user))
         "policy_version": POLICY_VERSION,
         "consented_at": c["consented_at"],
         "current_policy_version": POLICY_VERSION,
+        "ai_provider": AI_PROVIDER_NAME,
     }
 
 
@@ -611,13 +645,8 @@ def submit_input(
     project = require_project(project_id, user)
     if not payload.text.strip():
         raise HTTPException(422, "Enter some requirements text.")
-    consent = db.consent(user.id)
-    if not consent or consent["policy_version"] != POLICY_VERSION:
-        # The web app opens the consent dialog when it sees this code.
-        return JSONResponse(
-            status_code=403,
-            content={"detail": "Agree to AI processing before submitting requirements.", "code": "consent_required"},
-        )
+    if refusal := consent_refusal(user):
+        return refusal
     job = db.create_job(project_id, "extraction", 3, "Queued")
     db.touch_project(project_id, clear_confirmation=True)
     bg.add_task(queued, extraction_worker, job["id"], project_id, payload.text, project["name"])
@@ -701,6 +730,8 @@ def generate_diagram(
 ):
     """Queues a background job to generate diagram(s) from the confirmed model."""
     project = require_project(project_id, user)
+    if refusal := consent_refusal(user):
+        return refusal
     if not project["confirmed_at"]:
         raise HTTPException(409, "Confirm the requirements before generating.")
     diagram_types = list(dict.fromkeys(payload.diagram_types))  # de-duplicate, keep order
@@ -747,6 +778,8 @@ async def revise_diagram(
 ):
     """Applies natural language revision instructions to an existing diagram via AI."""
     diagram = require_diagram(diagram_id, user)
+    if refusal := consent_refusal(user):
+        return refusal
     instruction = payload.instruction.strip()
     if not instruction:
         raise HTTPException(422, "Describe the change you want.")

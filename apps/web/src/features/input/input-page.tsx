@@ -145,7 +145,7 @@ export function InputPage() {
           Extract requirements
         </Button>
         {consent.data?.consented && (
-          <span className="text-xs text-slate">Text is sent to Google Gemini for extraction.</span>
+          <span className="text-xs text-slate">Text is sent to {consent.data.ai_provider} for extraction.</span>
         )}
       </div>
 

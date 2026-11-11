@@ -296,6 +296,7 @@ Open the URL printed by Vite (usually `http://localhost:5173`). Submit requireme
 | `KROKI_URL` | Base URL for diagram rendering and PNG / SVG / PDF export |
 | `ZIP_MAX_VERSIONS` | Optional. Most diagram versions in one all-versions project ZIP (default 30) |
 | `AI_POLICY_VERSION` | Version of the AI-processing consent policy enforced by the API |
+| `AI_PROVIDER_NAME` | Provider name(s) shown in the consent text; list every provider the AI service can use |
 | `CORS_ORIGINS` | Comma-separated frontend origins allowed by the API |
 
 ### AI service (`services/ai-extraction/.env`)

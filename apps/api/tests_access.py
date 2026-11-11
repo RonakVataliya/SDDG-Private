@@ -118,6 +118,42 @@ def check(client):
     assert client.get(f'{api}/diagrams/{diagram_id}', headers=mine).json()['svg'].startswith('<svg')
     assert SECRET_TEXT in client.get(f'{api}/jobs/{job["id"]}', headers=mine).json()['error']
 
+    # 6. A member who has not agreed to the current AI policy gets the same 403 on every path that uses AI,
+    #    and nothing is changed or sent. (M2)
+    sql('INSERT INTO project_members(project_id, user_id) VALUES (%s, %s)', pid, STRANGER_ID)
+    ai_paths = [
+        (f'{api}/projects/{pid}/inputs', {'text': 'Hacked.'}, 202),
+        (f'{api}/projects/{pid}/generations', {'diagram_types': ['use_case']}, 202),
+        (f'{api}/diagrams/{diagram_id}/revisions', {'instruction': 'Rename Check Orders to View Orders'}, 201),
+        (f'{api}/projects/{pid}/flags/{flag_id}/answer', {'answer': 'Within 2 seconds'}, 200),
+        (f'{api}/projects/{pid}/flags/{flag_id}/apply-fix', None, 409),  # 409: this flag has no suggested fix
+    ]
+    refused = {'detail': 'Agree to AI processing before submitting requirements.', 'code': 'consent_required'}
+
+    def snapshot():
+        return (client.get(f'{api}/projects/{pid}/statements', headers=mine).json(),
+                client.get(f'{api}/projects/{pid}/flags', headers=mine).json(),
+                [d['id'] for d in client.get(f'{api}/projects/{pid}/diagrams', headers=mine).json()],
+                sql('SELECT count(*) FROM jobs WHERE project_id=%s', pid),
+                client.get(f'{api}/projects/{pid}', headers=mine).json()['confirmed'])
+
+    assert client.post(f'{api}/projects/{pid}/confirmation', headers=mine).status_code == 201
+    before = snapshot()
+    ai_calls = len(tests_integration.AI_CALLS)
+    for stage in ('no consent', 'outdated consent'):
+        if stage == 'outdated consent':
+            sql('INSERT INTO consents(user_id, policy_version, consented_at) VALUES (%s, %s, now())', STRANGER_ID, '2000-01-01')
+        for url, body, _ in ai_paths:
+            r = client.post(url, headers=theirs, json=body)
+            assert (r.status_code, r.json()) == (403, refused), (stage, url, r.status_code, r.text)
+    assert snapshot() == before, 'a refused request changed something'
+    assert len(tests_integration.AI_CALLS) == ai_calls, 'a refused request reached the AI service'
+    # After agreeing, each path answers as it did before the gate (generation last: it starts a job).
+    assert client.post(f'{api}/me/consent', headers=theirs, json={'policy_version': integrated.POLICY_VERSION}).status_code == 201
+    for url, body, expected in reversed(ai_paths[1:]):
+        r = client.post(url, headers=theirs, json=body)
+        assert r.status_code == expected, (url, r.status_code, r.text)
+
 
 if __name__ == '__main__':
     main()

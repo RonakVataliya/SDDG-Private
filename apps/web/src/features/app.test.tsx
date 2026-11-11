@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { AI_SECTION_VERSION } from '@/features/privacy/policy'
 import { getDb } from '@/mocks/db'
 import { renderApp } from '@/test/render'
 import { seedDiagram, seedProject } from '@/test/seed'
@@ -81,8 +82,60 @@ describe('NFR5d AI consent before first submission', () => {
     await user.click(within(again).getByRole('button', { name: 'Agree and extract' }))
 
     await waitFor(() => expect(getDb().jobs.filter((j) => j.payload)).toHaveLength(1))
-    expect(getDb().consent['dev@sddg.test'].version).toBe('2026-09-01')
+    expect(getDb().consent['dev@sddg.test'].version).toBe(AI_SECTION_VERSION)
     expect(await screen.findByText('Finding your requirements')).toBeInTheDocument()
+  })
+})
+
+describe('M2 consent names the provider the API reports, and covers every AI action', () => {
+  it('shows the API\'s provider name on the input page and in the consent dialog, and no hard-coded one', async () => {
+    seedProject({ consent: true })
+    const user = userEvent.setup()
+    const { unmount } = renderApp('/projects/pr_1/input')
+    expect(await screen.findByText('Text is sent to Example AI for extraction.')).toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent(/gemini|groq/i)
+    unmount()
+
+    delete getDb().consent['dev@sddg.test']
+    renderApp('/projects/pr_1/input')
+    await user.type(await screen.findByLabelText('Requirement text'), 'A member can reserve a book.')
+    const extract = screen.getByRole('button', { name: 'Extract requirements' })
+    await waitFor(() => expect(extract).toBeEnabled())
+    await user.click(extract)
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/the text you submit is sent to an external AI service: Example AI\./)).toBeInTheDocument()
+    expect(within(dialog).getByText(/I agree that my requirement text is sent to Example AI and/)).toBeInTheDocument()
+    expect(document.body).not.toHaveTextContent(/gemini|groq/i)
+  })
+
+  it('asks for consent when generation is refused, then starts it', async () => {
+    seedProject({ confirmed: true })
+    const user = userEvent.setup()
+    renderApp('/projects/pr_1/generate')
+    await user.click((await screen.findAllByRole('button', { name: 'Generate Use Case diagram' }))[0])
+    await user.click(await screen.findByRole('button', { name: 'Start generating' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Before we process your requirements' })
+    expect(getDb().jobs.filter((j) => j.kind === 'generation')).toHaveLength(0)
+    await user.click(within(dialog).getByRole('checkbox'))
+    await user.click(within(dialog).getByRole('button', { name: 'Agree and generate' }))
+    await waitFor(() => expect(getDb().jobs.filter((j) => j.kind === 'generation')).toHaveLength(1))
+  })
+
+  it('asks for consent when a diagram change is refused, then applies it', async () => {
+    seedDiagram()
+    delete getDb().consent['dev@sddg.test']
+    const user = userEvent.setup()
+    const { router } = renderApp('/projects/pr_1/diagrams/dg_1')
+    await user.type(await screen.findByRole('textbox', { name: /change/i }), 'Rename Issue book to Lend book')
+    await user.click(screen.getByRole('button', { name: 'Apply change' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Before we process your requirements' })
+    expect(getDb().diagrams).toHaveLength(1)
+    await user.click(within(dialog).getByRole('checkbox'))
+    await user.click(within(dialog).getByRole('button', { name: 'Agree and apply' }))
+    await waitFor(() => expect(getDb().diagrams).toHaveLength(2))
+    await waitFor(() => expect(router.state.location.pathname).not.toBe('/projects/pr_1/diagrams/dg_1'))
   })
 })
 
@@ -121,7 +174,7 @@ describe('requirements-first review', () => {
   })
 
   it('the server rejects generation when the requirements are not confirmed', async () => {
-    seedProject()
+    seedProject({ consent: true }) // consent is checked first, as on the API
     const res = await fetch('http://localhost/api/v1/projects/pr_1/generations', {
       method: 'POST',
       headers: { Authorization: 'Bearer mock-token:dev@sddg.test', 'Content-Type': 'application/json' },

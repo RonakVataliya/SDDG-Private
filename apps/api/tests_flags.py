@@ -73,7 +73,7 @@ def main():
     quality.httpx.post = fake_checker
     try:
         with TestClient(app) as c:
-            c.post("/api/v1/me/consent", headers=H, json={"policy_version": "2026-09-01"})
+            c.post("/api/v1/me/consent", headers=H, json={"policy_version": integrated.POLICY_VERSION})
             pid = c.post("/api/v1/projects", headers=H, json={"name": "Flags"}).json()["id"]
             c.post(f"/api/v1/projects/{pid}/inputs", headers=H, json={"text": "x"})
             url = f"/api/v1/projects/{pid}/flags"
@@ -110,8 +110,10 @@ def main():
             assert r.status_code == 409 and r.json()["detail"] == "No suggestion available."
 
             # accept the fix -> requirement updated, flag resolved, re-validated (other flags of R-001 cleared)
+            assert c.post(f"/api/v1/projects/{pid}/confirmation", headers=H).json()["confirmed"]
             r = c.post(f"{url}/{amb['id']}/apply-fix", headers=H).json()
             assert r["status"] == "resolved" and r["statement_text"] == "The system responds within 2 seconds."
+            assert not c.get(f"/api/v1/projects/{pid}", headers=H).json()["confirmed"]  # M2: the text changed, confirm again
             assert not [f for f in c.get(url + "?status=open", headers=H).json() if f["statement_ref"] == "R-001"]
 
             # answering a flag saves the clarification, resolves the flag (text unchanged) and re-analyses it

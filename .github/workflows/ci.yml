@@ -78,8 +78,10 @@ jobs:
           cache: pip
           cache-dependency-path: apps/api/requirements.txt
       - run: pip install -r requirements.txt
-      - name: Apply schema
-        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f schema.sql
+      - name: Apply schema and migrations
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f schema.sql
+          for m in migrations/*.sql; do psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$m"; done
       - name: Run every tests_*.py script
         run: |
           export DATA_ENCRYPTION_KEY="$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"

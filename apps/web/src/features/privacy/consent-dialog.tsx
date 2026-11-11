@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { errorMessage } from '@/api/errors'
-import { useGiveConsent } from '@/api/queries'
+import { useConsent, useGiveConsent } from '@/api/queries'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog'
@@ -13,21 +13,25 @@ import { AI_SECTION_VERSION, aiSection, POLICY_DATE, POLICY_VERSION } from './po
 /**
  * NFR5d. Shown before requirement text is sent to the AI provider for the first time, and again whenever the
  * AI section of the policy changes. The server also refuses submissions without consent (X8), so this is not
- * the only gate.
+ * the only gate. The provider name and the version agreed to both come from the API.
  */
 export function ConsentDialog({
   open,
   onOpenChange,
   onConsented,
   renewal,
+  action = 'Agree and extract',
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   onConsented: () => void
   renewal?: boolean
+  action?: string
 }) {
   const [agreed, setAgreed] = useState(false)
   const give = useGiveConsent()
+  const consent = useConsent()
+  const provider = consent.data?.ai_provider
 
   return (
     <Dialog
@@ -43,7 +47,7 @@ export function ConsentDialog({
           Privacy Policy v{POLICY_VERSION}, {formatDate(POLICY_DATE)}. Nothing is sent until you agree.
         </DialogDescription>
         <div className="mt-5 space-y-3 rounded-md border border-rule bg-paper p-4 text-sm leading-6 text-ink/85">
-          {aiSection.body.map((p, i) => (
+          {aiSection(provider).body.map((p, i) => (
             <p key={i}>{p}</p>
           ))}
           <Link to="/privacy" target="_blank" className="inline-block font-medium text-teal hover:underline">
@@ -53,8 +57,8 @@ export function ConsentDialog({
         <label className="mt-5 flex items-start gap-3 text-sm">
           <Checkbox checked={agreed} onCheckedChange={(v) => setAgreed(v === true)} className="mt-0.5" />
           <span>
-            I agree that my requirement text is sent to Groq and diagram descriptions are sent to Kroki, as
-            described above.
+            I agree that my requirement text is sent to {provider ?? 'the external AI service'} and diagram descriptions
+            are sent to Kroki, as described above.
           </span>
         </label>
         {give.isError && (
@@ -69,7 +73,7 @@ export function ConsentDialog({
           <Button
             disabled={!agreed || give.isPending}
             onClick={async () => {
-              const ok = await give.mutateAsync(AI_SECTION_VERSION).catch(() => null)
+              const ok = await give.mutateAsync(consent.data?.current_policy_version ?? AI_SECTION_VERSION).catch(() => null)
               if (!ok) return
               onOpenChange(false)
               setAgreed(false)
@@ -77,7 +81,7 @@ export function ConsentDialog({
             }}
           >
             {give.isPending && <Spinner className="text-white" label="Saving" />}
-            Agree and extract
+            {action}
           </Button>
         </DialogFooter>
       </DialogContent>

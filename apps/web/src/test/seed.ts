@@ -1,4 +1,5 @@
 import type { ExtractedItem, RequirementStatement } from '@/api/client'
+import { AI_SECTION_VERSION } from '@/features/privacy/policy'
 import { getDb, save } from '@/mocks/db'
 import { renderUseCase, type UseCaseModel } from '@/mocks/render'
 
@@ -21,13 +22,13 @@ export function seedProject({ confirmed = false, consent = false } = {}) {
     id: 'job_x', project_id: 'pr_1', kind: 'extraction', status: 'succeeded', applied: true,
     progress: { step: 3, total: 3, label: 'Done' }, created_at: at, started_at: at, finished_at: at,
   })
-  if (consent) db.consent[EMAIL] = { version: '2026-09-01', at }
+  if (consent) db.consent[EMAIL] = { version: AI_SECTION_VERSION, at }
   save()
 }
 
-/** A generated Use Case diagram (dg_1) on a confirmed pr_1. */
+/** A generated Use Case diagram (dg_1) on a confirmed pr_1, by a user who has agreed to AI processing. */
 export function seedDiagram() {
-  seedProject({ confirmed: true })
+  seedProject({ confirmed: true, consent: true })
   const model: UseCaseModel = {
     system: 'Library system',
     actors: [{ id: 'it_1', name: 'Librarian' }],

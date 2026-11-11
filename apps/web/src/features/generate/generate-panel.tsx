@@ -2,12 +2,13 @@ import { LockIcon } from 'lucide-react'
 import { useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router'
 import type { DiagramType, Project } from '@/api/client'
-import { errorMessage } from '@/api/errors'
+import { errorMessage, isConsentRequired } from '@/api/errors'
 import { useDiagrams, useStartGeneration } from '@/api/queries'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog'
 import { Notice } from '@/components/ui/notice'
 import { Spinner } from '@/components/ui/spinner'
+import { ConsentDialog } from '@/features/privacy/consent-dialog'
 import { cn, formatRelative } from '@/lib/utils'
 import { DIAGRAM_TYPES, NEEDS, typeLabel } from './diagram-types'
 
@@ -16,9 +17,22 @@ export function GeneratePanel({ project }: { project: Project }) {
   const navigate = useNavigate()
   const [selected, setSelected] = useState<DiagramType[]>(['use_case'])
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [consentOpen, setConsentOpen] = useState(false)
   const start = useStartGeneration(project.id)
   const diagrams = useDiagrams(project.id)
   const locked = !project.confirmed
+
+  async function generate() {
+    const job = await start.mutateAsync(selected).catch((e: unknown) => {
+      if (isConsentRequired(e)) {
+        start.reset() // not an error to show: ask for consent, then start again
+        setConsentOpen(true)
+      }
+      return null
+    })
+    setConfirmOpen(false)
+    if (job) navigate(`generate?job=${job.id}`)
+  }
 
   const toggle = (t: DiagramType) => setSelected((s) => (s.includes(t) ? s.filter((x) => x !== t) : [...s, t]))
 
@@ -141,11 +155,7 @@ export function GeneratePanel({ project }: { project: Project }) {
             </Button>
             <Button
               disabled={start.isPending}
-              onClick={async () => {
-                const job = await start.mutateAsync(selected).catch(() => null)
-                setConfirmOpen(false)
-                if (job) navigate(`generate?job=${job.id}`)
-              }}
+              onClick={generate}
             >
               {start.isPending && <Spinner className="text-white" label="Starting" />}
               Start generating
@@ -153,6 +163,7 @@ export function GeneratePanel({ project }: { project: Project }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConsentDialog open={consentOpen} onOpenChange={setConsentOpen} onConsented={generate} action="Agree and generate" />
     </div>
   )
 }
