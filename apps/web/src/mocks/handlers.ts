@@ -49,6 +49,12 @@ function authed(fn: (ctx: Ctx) => Response | Promise<Response>): HttpResponseRes
 function ownedProject(email: string, id: unknown) {
   return getDb().projects.find((p) => p.id === id && p.owner === email)
 }
+/** Stands in for the API's AI_PROVIDER_NAME. Deliberately not a real provider: the app must show whatever the API says. */
+const AI_PROVIDER = 'Example AI'
+const noConsent = (email: string) =>
+  getDb().consent[email]?.version === AI_SECTION_VERSION
+    ? null
+    : fail(403, 'Agree to AI processing before submitting requirements.', 'consent_required')
 const notFound = () => fail(404, 'Not found, or you do not have access to it.')
 
 export const handlers = [
@@ -63,6 +69,7 @@ export const handlers = [
         policy_version: c?.version ?? null,
         consented_at: c?.at ?? null,
         current_policy_version: AI_SECTION_VERSION,
+        ai_provider: AI_PROVIDER,
       })
     }),
   ),
@@ -74,7 +81,7 @@ export const handlers = [
       getDb().consent[email] = { version: policy_version, at }
       save()
       return HttpResponse.json(
-        { consented: policy_version === AI_SECTION_VERSION, policy_version, consented_at: at, current_policy_version: AI_SECTION_VERSION },
+        { consented: policy_version === AI_SECTION_VERSION, policy_version, consented_at: at, current_policy_version: AI_SECTION_VERSION, ai_provider: AI_PROVIDER },
         { status: 201 },
       )
     }),
@@ -120,8 +127,8 @@ export const handlers = [
       const p = ownedProject(email, params.project_id)
       if (!p) return notFound()
       // X8: the server refuses to send anything to the AI provider without current consent.
-      if (getDb().consent[email]?.version !== AI_SECTION_VERSION)
-        return fail(403, 'Agree to AI processing before submitting requirements.', 'consent_required')
+      const refused = noConsent(email)
+      if (refused) return refused
       const { text } = (await request.json()) as { text: string }
       if (!text?.trim()) return fail(422, 'Paste or type at least one requirement.')
       const job = createJob(p.id, 'extraction', { payload: text })
@@ -240,6 +247,8 @@ export const handlers = [
     authed(async ({ email, params, request }) => {
       const p = ownedProject(email, params.project_id)
       if (!p) return notFound()
+      const refused = noConsent(email)
+      if (refused) return refused
       // FR5e: enforced on the server, not only by the disabled button.
       if (!p.confirmed_at) return fail(409, 'Confirm the requirements before generating.', 'not_confirmed')
       const { diagram_types } = (await request.json()) as { diagram_types: string[] }
@@ -284,6 +293,8 @@ export const handlers = [
     authed(async ({ email, params, request }) => {
       const d = getDb().diagrams.find((x) => x.id === params.diagram_id)
       if (!d || !ownedProject(email, d.project_id)) return notFound()
+      const refused = noConsent(email)
+      if (refused) return refused
       const { instruction } = (await request.json()) as { instruction?: string }
       const text = (instruction ?? '').trim()
       if (!text) return fail(422, 'Describe the change you want.')

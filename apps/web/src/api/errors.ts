@@ -11,6 +11,9 @@ export class ApiError extends Error {
   }
 }
 
+/** The API refused an AI action because the user has not agreed to the current AI policy. */
+export const isConsentRequired = (error: unknown) => error instanceof ApiError && error.code === 'consent_required'
+
 /** A request that failed because the server is asleep or unreachable, as opposed to a real rejection. */
 export function isWakingError(error: unknown) {
   if (error instanceof ApiError) return WAKING_STATUSES.has(error.status)

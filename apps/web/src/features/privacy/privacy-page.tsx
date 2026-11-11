@@ -16,7 +16,7 @@ export function PrivacyPage() {
         Draft wording. The final text is being written by the team (task N3).
       </p>
       <div className="mt-8 space-y-8">
-        {sections.map((s) => (
+        {sections().map((s) => (
           <section key={s.id} id={s.id} className="scroll-mt-6">
             <h2 className="text-lg font-semibold">{s.heading}</h2>
             {s.body.map((p, i) => (

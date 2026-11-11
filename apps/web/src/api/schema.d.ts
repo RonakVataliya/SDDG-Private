@@ -576,6 +576,15 @@ export interface paths {
                         "application/json": components["schemas"]["Job"];
                     };
                 };
+                /** @description No current AI consent (code consent_required) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 /** @description Extraction not confirmed (FR5e) */
                 409: {
                     headers: {
@@ -641,10 +650,11 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** The project's diagrams as one ZIP: PNG, SVG, PDF and source code for each, plus README.txt. versions=all (default) or latest */
+        /** The project's diagrams as one ZIP (PNG, SVG, PDF and source code for each, plus README.txt; no PDF for Mermaid) */
         get: {
             parameters: {
                 query?: {
+                    /** @description all (default) = every version; latest = newest version of each diagram */
                     versions?: "all" | "latest";
                 };
                 header?: never;
@@ -808,6 +818,15 @@ export interface paths {
                         "application/json": components["schemas"]["Diagram"];
                     };
                 };
+                /** @description No current AI consent (code consent_required) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 /** @description The instruction could not be applied */
                 422: {
                     headers: {
@@ -834,7 +853,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** The rendered diagram as PNG (shown in the viewer; FR18a — 2x, capped at 8000 px), SVG or PDF, or its source code (text/x-plantuml, text/vnd.graphviz or text/x-mermaid), downloaded by Export */
+        /** The rendered diagram as PNG (shown in the viewer; FR18a — 2x, capped at 8000 px), SVG or PDF, downloaded by Export */
         get: {
             parameters: {
                 query: {
@@ -857,6 +876,7 @@ export interface paths {
                         "image/png": string;
                         "image/svg+xml": string;
                         "application/pdf": string;
+                        /** @description format=source: the diagram code (text/x-plantuml, text/vnd.graphviz or text/x-mermaid) */
                         "text/plain": string;
                     };
                 };
@@ -968,6 +988,8 @@ export interface components {
             status: "ok";
         };
         Consent: {
+            /** @description Provider name(s) for the consent text, set on the API (AI_PROVIDER_NAME) */
+            ai_provider: string;
             /** @description True only if consent matches the current AI section of the policy */
             consented: boolean;
             policy_version?: string | null;
@@ -1020,12 +1042,12 @@ export interface components {
             label?: string | null;
             source: components["schemas"]["SourceLocation"];
         };
-        /** @enum {string} */
         StatementWrite: {
             text?: string;
             /** @enum {string|null} */
             label?: "functional" | "non_functional" | "user_story" | "constraint" | "unknown" | null;
         };
+        /** @enum {string} */
         ItemCategory: "actor" | "entity" | "process" | "data_flow" | "data_store" | "interaction" | "relationship";
         /** @enum {string} */
         ItemOrigin: "system-extracted" | "user-added" | "user-edited";
