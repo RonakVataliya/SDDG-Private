@@ -46,6 +46,8 @@ EXTRACTION = {
 SPLIT = {'requirements': EXTRACTION['requirements'],
          'metadata': {'model_used': 'fake', 'requirement_count': 2, 'total_duration_seconds': 0.01}}
 EXTRACT_CALLS = []  # payloads sent to /extraction/extract, to check done_nodes / known
+AI_CALLS = []  # every URL posted to the AI service or Kroki
+NEXT_SPLIT = []  # requirement texts the next /extraction/split returns, instead of SPLIT
 
 USECASE = {
     'spec': {
@@ -90,8 +92,16 @@ class FakeAIClient:
     async def __aexit__(self, *args):
         return None
 
+    async def aclose(self):
+        return None
+
     async def post(self, url, **kwargs):
+        AI_CALLS.append(url)
         if url.endswith('/extraction/split'):
+            if NEXT_SPLIT:
+                texts = NEXT_SPLIT.pop()
+                return FakeResponse(dict(SPLIT, requirements=[{'id': f'R-{n:03d}', 'text': t, 'labels': ['functional']}
+                                                              for n, t in enumerate(texts, 1)]))
             return FakeResponse(SPLIT)
         if url.endswith('/extraction/extract'):
             EXTRACT_CALLS.append(kwargs['json'])
@@ -157,8 +167,12 @@ def main():
             pid = project['id']
             no_consent = client.post(f'/api/v1/projects/{pid}/inputs', headers=headers, json={'text': 'A user logs in.'})
             assert no_consent.status_code == 403 and no_consent.json()['code'] == 'consent_required', no_consent.text
-            assert client.post('/api/v1/me/consent', headers=headers,
-                               json={'policy_version': '2026-09-01'}).status_code == 201
+            given = client.post('/api/v1/me/consent', headers=headers, json={'policy_version': integrated.POLICY_VERSION})
+            assert given.status_code == 201
+            # M2: the provider named in the consent text comes from the API (AI_PROVIDER_NAME), in one place.
+            assert integrated.AI_PROVIDER_NAME == 'Groq or Google Gemini'
+            shown = client.get('/api/v1/me/consent', headers=headers).json()
+            assert given.json()['ai_provider'] == shown['ai_provider'] == integrated.AI_PROVIDER_NAME, shown
             for bad_text in ('   \n ', 'x' * 300_001):  # blank, and over the 100-page limit
                 bad = client.post(f'/api/v1/projects/{pid}/inputs', headers=headers, json={'text': bad_text})
                 assert bad.status_code == 422, bad.text
@@ -178,11 +192,27 @@ def main():
 
             # Requirements-first: the input job only finds requirements; no building blocks yet.
             assert client.get(f'/api/v1/projects/{pid}/items', headers=headers).json()['items'] == []
-            # A second submission adds requirements; numbering goes on and is never reused.
-            assert client.post(f'/api/v1/projects/{pid}/inputs', headers=headers,
-                               json={'text': 'Customer logs in.\nCustomer checks orders.'}).status_code == 202
-            refs = [s['ref'] for s in client.get(f'/api/v1/projects/{pid}/statements', headers=headers).json()]
-            assert refs == ['R-001', 'R-002', 'R-003', 'R-004'], refs
+            # M2: submitting requirements the project already has adds nothing; the job says how many were skipped.
+            def submit_again():
+                r = client.post(f'/api/v1/projects/{pid}/inputs', headers=headers, json={'text': 'again'})
+                assert r.status_code == 202, r.text
+                done = client.get(f"/api/v1/jobs/{r.json()['id']}", headers=headers).json()
+                assert done['status'] == 'succeeded', done
+                return done['progress']['label'], client.get(f'/api/v1/projects/{pid}/statements', headers=headers).json()
+
+            label, after = submit_again()
+            assert after == statements, after
+            assert label == 'Requirements ready to review (2 duplicates skipped)', label
+            # Same text in another case, spacing or without the full stop is the same requirement; so is a repeat
+            # inside one submission. New ones continue the numbering, which is never reused.
+            NEXT_SPLIT.append(['  customer   LOGS in', 'Customer checks orders.', 'Customer pays.', 'customer pays'])
+            label, after = submit_again()
+            assert [(s['ref'], s['text']) for s in after[2:]] == [('R-003', 'Customer pays.')], after
+            assert label == 'Requirements ready to review (3 duplicates skipped)', label
+            NEXT_SPLIT.append(['Customer pays.', 'Customer logs out.'])
+            label, after = submit_again()
+            assert [s['ref'] for s in after] == ['R-001', 'R-002', 'R-003', 'R-004'], after
+            assert label == 'Requirements ready to review (1 duplicate skipped)', label
 
             # Review: add, edit and delete requirements.
             assert client.post(f'/api/v1/projects/{pid}/statements', headers=headers, json={'text': '  '}).status_code == 422
@@ -233,6 +263,10 @@ def main():
             assert EXTRACT_CALLS[-1]['done_nodes'] == ['actors', 'interactions', 'processes']
             assert any(a['name'] == 'Shopper' for a in EXTRACT_CALLS[-1]['known']['actors'])
             assert len(client.get(f'/api/v1/projects/{pid}/items', headers=headers).json()['items']) == len(items)
+            # M2: a submission that adds nothing new does not wipe the extracted building blocks.
+            assert client.post(f'/api/v1/projects/{pid}/inputs', headers=headers, json={'text': 'again'}).status_code == 202
+            assert len(client.get(f'/api/v1/projects/{pid}/items', headers=headers).json()['items']) == len(items)
+            assert client.post(f'/api/v1/projects/{pid}/confirmation', headers=headers).status_code == 201
 
             diagram = client.get(f'/api/v1/diagrams/{diagram_id}', headers=headers).json()
             assert 'data-element-id=' in diagram['svg']

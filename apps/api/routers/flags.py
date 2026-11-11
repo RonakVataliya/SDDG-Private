@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from core import db
 from core.auth import User, get_current_user
 from core.quality import NO_SUGGESTION, detect
-from routers.integrated import NOT_FOUND, require_project
+from routers.integrated import NOT_FOUND, consent_refusal, require_project
 
 router = APIRouter()
 
@@ -58,6 +58,8 @@ def answer(project_id: str, flag_id: str, body: Answer, user: User = Depends(get
     user) and the requirement is re-analysed. The requirement text is not changed (resolving is separate from editing),
     and re-analysis will not reopen a flag the user resolved."""
     flag = get_flag(project_id, flag_id, user)
+    if refusal := consent_refusal(user):
+        return refusal
     db.update_flag(project_id, flag_id, answer=body.answer.strip(), status="resolved",
                    resolved_by=user.email, resolved_at=db.now())
     detect(project_id, [flag["statement_id"]])
@@ -81,6 +83,8 @@ def reopen(project_id: str, flag_id: str, user: User = Depends(get_current_user)
 @router.post("/projects/{project_id}/flags/{flag_id}/apply-fix")
 def apply_fix(project_id: str, flag_id: str, user: User = Depends(get_current_user)):
     flag = get_flag(project_id, flag_id, user)
+    if refusal := consent_refusal(user):
+        return refusal
     if not flag["suggested_fix"]:
         raise HTTPException(409, NO_SUGGESTION)
     db.set_statement_text(project_id, flag["statement_id"], flag["suggested_fix"])
